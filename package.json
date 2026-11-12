@@ -1,0 +1,61 @@
+{
+  "name": "unlimited-image-studio",
+  "productName": "Unlimited Image Studio",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Portable local image generation studio",
+  "main": "desktop/main.cjs",
+  "scripts": {
+    "dev": "electron .",
+    "build:portable": "node desktop/build-portable.cjs",
+    "test:bootstrap": "node --test desktop/bootstrap.test.cjs desktop/hardware.test.cjs desktop/choice-logic.test.cjs desktop/generation.test.cjs"
+  },
+  "dependencies": {
+    "extract-zip": "2.0.1"
+  },
+  "devDependencies": {
+    "electron": "44.4.5",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.criso2hd.unlimitedimagestudio",
+    "productName": "Unlimited Image Studio",
+    "asar": true,
+    "files": [
+      "desktop/main.cjs",
+      "desktop/preload.cjs",
+      "desktop/bootstrap.cjs",
+      "desktop/generation.cjs",
+      "desktop/hardware.cjs",
+      "desktop/assets-manifest.json",
+      "desktop/setup.html",
+      "desktop/setup.js",
+      "desktop/setup.css",
+      "prototype/index.html",
+      "prototype/script.js",
+      "prototype/theme.js",
+      "prototype/choice-logic.js",
+      "prototype/prompt-language.js",
+      "prototype/inspiration-recipes.js",
+      "prototype/visual-assets.js",
+      "prototype/styles.css",
+      "prototype/styles-v3.css",
+      "prototype/assets/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "Unlimited-Image-Studio.exe"
+    }
+  }
+}

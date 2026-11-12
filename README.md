@@ -1,0 +1,72 @@
+# Unlimited Image Studio
+
+A portable, fully local AI image studio for Windows. It runs **Qwen-Image-2.1** on your own graphics card through [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp). There is no account, no cloud service and no usage limit: prompts and images never leave your machine.
+
+> **Early build (v0.0.1).** Generation, the guided prompt builder, the render queue and the Library work. The image editor, reference-image generation and AI prompt refinement are not built yet (see [What's not done yet](#whats-not-done-yet)).
+
+![Inspiration wall](docs/screenshots/01-inspiration.png)
+
+## What it does
+
+- **Guided prompt builder.** Photos, Art & illustration, Graphics, Posters & text, Transparent assets, Panoramas & storyboards and Comics. Each step offers choices with visual examples and a short explanation, and later choices adapt to earlier ones. Everything is optional, and a **Freeform** page is there when you just want to type.
+- **Inspiration wall.** Start from a direction you like and add your own subject.
+- **Render queue.** Queue as many images as you like, from any page, with different settings for each. Generate up to 8 variations of a prompt at once. Reorder, pause, cancel, and see live progress with a time estimate. Waiting jobs survive closing the app and come back paused until you resume.
+- **Library.** PNG originals and their prompts are stored beside the app. Rate images, organize them into galleries, select several at once, and delete (to the Recycle Bin, with Undo). A full-size viewer has zoom and full screen.
+- **Themes.** Four built-in themes and your own colors, shared with the setup screen.
+- **Portable.** One EXE. Models, runtime, settings and images live in folders next to it, so updating means replacing only the EXE.
+
+| Guided builder | Render queue |
+|---|---|
+| ![Guided builder](docs/screenshots/02-guided-builder.png) | ![Render queue](docs/screenshots/03-queue.png) |
+
+| Library | Image viewer |
+|---|---|
+| ![Library](docs/screenshots/04-library.png) | ![Image viewer](docs/screenshots/05-viewer.png) |
+
+## Requirements
+
+- Windows 10 or 11, 64-bit.
+- A graphics card. An **NVIDIA** card is the validated path (CUDA). Other cards fall back to Vulkan, and CPU rendering works but is much slower. Vulkan, CPU and the lighter model weights have had less hands-on testing than CUDA.
+- Disk space for the first-time download. Roughly 11 to 16 GB depending on the model weight and GPU. The size is shown before anything downloads.
+- Graphics memory decides which model weight is offered:
+
+| Weight | Needs about |
+|---|---|
+| Q2_K | any |
+| Q3_K | 4 GB |
+| Q4_K | 6 GB |
+| Q6_K | 10 GB |
+| Q8_0 | 14 GB |
+
+On first launch the app detects your graphics card, suggests a weight, and downloads the model, text encoder and runtime next to the EXE. Downloads resume if interrupted and every file is checked against a pinned size and SHA-256. Model files are **not** part of this repository.
+
+## Speed
+
+Measured on one machine (RTX 4080 16 GB, Q8_0 weight, 12 steps): a 512 px image takes about 12 seconds and a 1024 px image about 40 seconds, after the model is loaded. Your results will depend on your card, the weight, the image size and the step count.
+
+## Build from source
+
+```bash
+npm install
+npm run test:bootstrap   # unit tests
+npm run build:portable   # produces release/Unlimited-Image-Studio.exe
+```
+
+`npm run dev` starts the app with Electron directly. In that mode it keeps its files in `release-dev/` and skips the first-run setup.
+
+See [PORTABLE_RELEASE.md](PORTABLE_RELEASE.md) for the folder layout and update behavior, and [prototype/README.md](prototype/README.md) for the original interface design notes (parts of it predate the current look).
+
+## What's not done yet
+
+- **Image editor** (instruction edits, local edits, masks). The page exists as a placeholder.
+- **Multiple reference images.** The upload UI is there; generation from references is not connected.
+- **AI prompt refinement.** The button is a placeholder. The design is in [prototype/PROMPT_ASSISTANCE.md](prototype/PROMPT_ASSISTANCE.md).
+- **Transparent (alpha) export.** The Transparent assets page designs isolated subjects, but true alpha output is still in development.
+
+## Credits and licenses
+
+- Image model: [Qwen-Image-2.1](https://github.com/QwenLM/Qwen-Image-2.1). Its license applies to the weights you download.
+- Runtime: [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp).
+- Fonts: DM Sans and Manrope, under the SIL Open Font License (see `prototype/assets/fonts`).
+
+If you enjoy the project, you can [buy me a coffee](https://buymeacoffee.com/criso2hdj).

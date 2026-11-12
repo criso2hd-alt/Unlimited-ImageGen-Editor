@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+  <title>Unlimited Image Studio — Setup</title>
+  <link rel="stylesheet" href="setup.css">
+</head>
+<body>
+  <div class="setup-drag-region" aria-hidden="true"></div>
+  <main class="panel">
+    <div class="eyebrow">UNLIMITED IMAGE STUDIO <span>0.0.1</span></div>
+    <h1 id="title">Setting up your local studio</h1>
+    <p class="intro" id="intro">The image runtime and Qwen-Image-2.1 model stay beside this EXE. Future versions use the same files.</p>
+    <div class="setup-choices"><label id="gpu-choice" hidden>Graphics card<select id="gpu-select"></select><small>Choose the card to use for image generation.</small></label><label id="memory-choice" hidden>Graphics memory<select id="memory-select"><option value="">Choose VRAM range…</option><option value="2048">Under 4 GB</option><option value="4096">4–5 GB</option><option value="6144">6–7 GB</option><option value="8192">8–9 GB</option><option value="10240">10–13 GB</option><option value="14336">14 GB or more</option></select><small>Windows could not measure this card’s VRAM reliably. Choose the range from its specifications.</small></label><label id="model-choice">Model weight<select id="model-select"></select><small id="model-note"></small></label></div>
+    <div id="progress"><div class="progress-head"><strong id="phase">Preparing folders</strong><span id="percent">0%</span></div>
+    <div class="track"><div id="bar"></div></div>
+    <div class="subline"><span id="asset">Checking files…</span><span id="size"></span></div></div>
+    <div id="error" class="error" hidden></div>
+    <div class="actions"><button id="back" hidden>Back to studio</button><button id="retry" hidden>Retry download</button><button id="open" hidden>Open studio</button><button id="folder">Open data folder</button></div>
+    <p class="footnote"><span id="footnote-text">First setup needs an internet connection and about <strong id="download-size">11.1 GB</strong> of downloads. You can resume interrupted downloads.</span> Model use is subject to its <a id="license" href="https://github.com/QwenLM/Qwen-Image-2.1/blob/main/LICENSE" target="_blank" rel="noopener">license</a>.</p>
+  </main>
+  <script src="../prototype/theme.js"></script>
+  <script src="setup.js"></script>
+</body>
+</html>

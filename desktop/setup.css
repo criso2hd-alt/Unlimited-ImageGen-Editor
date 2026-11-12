@@ -1,0 +1,24 @@
+:root{color-scheme:dark;font-family:Inter,"Segoe UI",Arial,sans-serif;background:#252525;color:#f0f0ed}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#252525}.panel{width:min(680px,calc(100vw - 64px));background:#1c1c1d;border:1px solid #3d3d3d;border-radius:18px;padding:46px;box-shadow:0 24px 80px #0005}.eyebrow{font-size:11px;letter-spacing:.18em;color:#bdbdb7;font-weight:700}.eyebrow span{margin-left:12px;color:#888}h1{font-size:32px;letter-spacing:-.04em;margin:20px 0 10px;font-weight:600}.intro{color:#aaa;line-height:1.6;margin:0 0 38px}.progress-head,.subline{display:flex;justify-content:space-between;gap:20px}.progress-head{font-size:14px;margin-bottom:12px}.progress-head span{color:#d4bd9b}.track{height:8px;background:#343434;border-radius:20px;overflow:hidden}.track div{height:100%;width:0;background:#c2aa86;border-radius:20px;transition:width .18s}.subline{font-size:12px;color:#969696;margin-top:12px;min-height:34px}.subline span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.actions{display:flex;gap:10px;margin-top:20px}.actions button{padding:10px 14px;background:#383838;color:#eee;border:1px solid #555;border-radius:8px;cursor:pointer}.actions button:hover{background:#454545}.actions #retry{background:#c2aa86;color:#1c1c1d;border-color:#c2aa86}.footnote{font-size:12px;color:#858585;line-height:1.6;margin:30px 0 0}.footnote a{color:#c2aa86}.error{color:#ffaaa5;background:#4a2929;padding:12px;border-radius:8px;font-size:13px;margin-top:18px;overflow-wrap:anywhere}
+.setup-drag-region{position:fixed;z-index:2;top:0;left:0;right:140px;height:44px;-webkit-app-region:drag;app-region:drag}
+.setup-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:-17px 0 30px}.setup-choices label{display:flex;flex-direction:column;gap:6px;color:#e8e8e3;font-size:12px;font-weight:700}.setup-choices label[hidden]{display:none}.setup-choices select{width:100%;min-width:0;background:#303030;border:1px solid #626262;border-radius:7px;color:#f2f2ef;padding:9px;font:12px Inter,'Segoe UI',sans-serif}.setup-choices small{min-height:30px;color:#aaa;font-weight:400;line-height:1.4}@media(max-width:650px){.setup-choices{grid-template-columns:1fr}}
+.actions button:disabled{opacity:.45;cursor:default}
+
+@font-face{font-family:'DM Sans';src:url('../prototype/assets/fonts/DMSans.ttf') format('truetype');font-weight:100 1000;font-style:normal;font-display:swap}
+@font-face{font-family:'Manrope';src:url('../prototype/assets/fonts/Manrope.ttf') format('truetype');font-weight:100 1000;font-style:normal;font-display:swap}
+/* Follow the studio theme (colors are set from the saved theme by theme.js; these are the Night Slate defaults). */
+:root{--studio-matte:#30343a;--studio-panel:#252a30;--studio-sidebar:#1d2228;--studio-header:#22272d;--studio-card:#373d44;--studio-accent:#bed0dc;--studio-accent-soft:#bed0dc33;font-family:'DM Sans','Segoe UI Variable','Segoe UI',Arial,sans-serif;background:var(--studio-matte);color:#f3f3f1}
+body{background-color:var(--studio-matte);background-image:radial-gradient(ellipse 48% 40% at 83% 14%,#ffffff10,transparent 75%),radial-gradient(ellipse 42% 34% at 10% 82%,#00000018,transparent 78%),radial-gradient(circle,#ffffff0a .75px,transparent 1px);background-size:auto,auto,21px 21px}
+.panel{background:var(--studio-panel);border-color:#ffffff2e;box-shadow:0 24px 80px #0006}
+.eyebrow{font-family:'Manrope',sans-serif;color:var(--studio-accent)}.eyebrow span{color:#a9adb2}
+h1{font-family:'Manrope',sans-serif}
+.intro,.setup-choices small,.subline,.footnote{color:#c5c8cc}
+.progress-head span{color:var(--studio-accent)}
+.track{background:#ffffff22}.track div{background:var(--studio-accent)}
+.setup-choices select{background:var(--studio-header);border-color:#ffffff38}
+.actions button{background:#ffffff12;border-color:#ffffff3b;color:#f3f3f1;font-family:inherit}.actions button:hover{background:#ffffff20}
+.actions #retry{background:var(--studio-accent);color:#202428;border-color:var(--studio-accent);font-weight:700}.actions #retry:hover{filter:brightness(1.06)}
+.footnote a{color:var(--studio-accent)}
+.footnote strong{color:#f3f3f1}
+.error{color:#ffd0cc;background:#4a2929}
+#progress[hidden]{display:none}
+.actions{flex-wrap:wrap}

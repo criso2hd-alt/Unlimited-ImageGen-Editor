@@ -1,0 +1,47 @@
+(function(root){
+  'use strict';
+  // Every collage image has a complete guided direction. The user supplies the subject.
+  const recipes={
+    'Window light portrait':{ratio:'3:4',choices:{type:'Portrait',look:'Contemporary digital',process:'Contemporary',light:'Window light',framing:'Waist-up'}},
+    'Ceramic still life':{ratio:'1:1',choices:{type:'Product',look:'Contemporary digital',process:'Contemporary',light:'Window light',framing:'Close-up'}},
+    'Coastal film':{ratio:'16:9',choices:{type:'Landscape',look:'35mm color film',process:'Color negative',light:'Overcast',framing:'Wide scene'}},
+    'Quiet architecture':{ratio:'4:3',choices:{type:'Architecture',look:'Contemporary digital',process:'Contemporary',light:'Window light',framing:'Symmetrical'}},
+    'Food story':{ratio:'4:3',choices:{type:'Food',look:'Lifestyle',process:'Color negative',light:'Window light',framing:'Close-up'}},
+    'City morning':{ratio:'3:2',choices:{type:'Street',look:'Documentary',process:'Color negative',light:'Overcast',framing:'Wide scene'}},
+    'Botanical plate':{ratio:'3:4',choices:{medium:'Watercolor',character:'Botanical study',palette:'Warm paper'}},
+    'Storybook fox':{ratio:'1:1',choices:{medium:'Gouache',character:'Storybook',palette:'Earth tones'}},
+    'Abstract forms':{ratio:'1:1',choices:{medium:'Cut paper',character:'Abstract',palette:'Limited palette'}},
+    'Gallery poster':{ratio:'2:3',choices:{purpose:'Exhibition poster',layout:'Minimal',finish:'Fine art'}},
+    'Citrus sticker':{ratio:'1:1',choices:{asset:'Sticker',language:'Flat shapes',palette:'Bright playful'}},
+    'Four moments':{ratio:'3:4',choices:{format:'Comic page',art:'Clear line',story:'Character action'}},
+    'Monochrome portrait':{ratio:'3:4',choices:{type:'Portrait',look:'Black & white',process:'Silver gelatin',light:'Rembrandt light',framing:'Close-up'}},
+    'Nature close-up':{ratio:'1:1',choices:{type:'Nature',look:'Macro',process:'Contemporary',light:'Overcast',framing:'Extreme close-up'}},
+    'Editorial fashion':{ratio:'3:4',choices:{type:'Portrait',look:'Fashion',process:'Portra-inspired',light:'Window light',framing:'Waist-up'}},
+    'Classic car':{ratio:'3:2',choices:{type:'Product',look:'Editorial',process:'Contemporary',light:'Overcast',framing:'Wide scene'}},
+    'Mountain air':{ratio:'16:9',choices:{type:'Landscape',look:'Contemporary digital',process:'Contemporary',light:'Golden hour',framing:'Panorama'}},
+    'Evening cafe':{ratio:'4:3',choices:{type:'Interior',look:'Cinematic still',process:'Contemporary',light:'Warm practical light',framing:'Wide scene'}},
+    'Wildflowers in oil':{ratio:'3:4',choices:{medium:'Oil painting',character:'Botanical study',palette:'Natural color'}},
+    'Bird in ink':{ratio:'3:4',choices:{medium:'Ink drawing',character:'Botanical study',palette:'Black & white'}},
+    'Geometric rhythm':{ratio:'1:1',choices:{asset:'Pattern',language:'Geometric',palette:'Earthy warm'}},
+    'Abstract cover':{ratio:'1:1',choices:{purpose:'Album cover',layout:'Image-led',finish:'Modern clean'}},
+    'Soft character':{ratio:'1:1',choices:{asset:'Mascot',language:'Soft 3D',palette:'Pastel'}},
+    'Mountain comic':{ratio:'3:4',choices:{format:'Comic page',art:'Watercolor',story:'Environment'}},
+    'Instant-film portrait':{ratio:'3:4',choices:{type:'Portrait',look:'Instant film',process:'Polaroid-style',light:'Window light',framing:'Waist-up'},cue:'Candid expression, gentle contrast, softened detail, and imperfect instant-print color.'},
+    'Seventies family snapshot':{ratio:'3:2',choices:{type:'Portrait',look:'Lifestyle',process:'1970s color',light:'Golden hour',framing:'Wide scene'},cue:'A relaxed family snapshot with natural group poses, warm faded color, and modest grain.'},
+    'Silver-gelatin portrait':{ratio:'3:4',choices:{type:'Portrait',look:'Black & white',process:'Silver gelatin',light:'Window light',framing:'Close-up'},cue:'Luminous skin highlights, detailed shadows, and tactile darkroom print texture.'},
+    'Color-slide travel':{ratio:'3:2',choices:{type:'Landscape',look:'35mm color film',process:'Slide film',light:'Hard sunlight',framing:'Wide scene'},cue:'Clear travel-photography detail with rich but believable slide-film color.'},
+    'Direct-flash party':{ratio:'3:2',choices:{type:'Street',look:'Editorial',process:'1990s editorial',light:'Direct flash',framing:'Wide scene'},cue:'A spontaneous celebration, bright flash-lit foreground, and fast falloff into a dim room.'},
+    'Formal seated portrait':{ratio:'3:4',choices:{type:'Portrait',look:'Editorial',process:'Contemporary',light:'Studio softbox',framing:'Waist-up'},cue:'An intentional seated pose with natural hand placement and a calm direct gaze.'},
+    'Walking portrait':{ratio:'3:4',choices:{type:'Portrait',look:'Lifestyle',process:'Color negative',light:'Overcast',framing:'Environmental portrait'},cue:'A natural mid-step walking pose, moving fabric, and a sharp face.'},
+    'Environmental portrait':{ratio:'4:3',choices:{type:'Portrait',look:'Documentary',process:'Contemporary',light:'Window light',framing:'Environmental portrait'},cue:'Show the person clearly within a workplace that explains what they do.'},
+    'Motion-blur dancer':{ratio:'3:4',choices:{type:'Portrait',look:'Cinematic still',process:'Contemporary',light:'Top light',framing:'Wide scene'},cue:'A slow-shutter photograph with graceful motion trails in arms and clothing while part of the face stays recognizable.'},
+    'Panning cyclist':{ratio:'16:9',choices:{type:'Street',look:'Long exposure',process:'Contemporary',light:'Overcast',framing:'Wide scene'},cue:'Pan the camera with the moving cyclist so the rider stays relatively sharp and the background blurs horizontally.'},
+    'Night crowd':{ratio:'3:2',choices:{type:'Street',look:'Documentary',process:'Contemporary',light:'Blue hour',framing:'Wide scene'},cue:'A believable varied crowd at night with one clear foreground focal person and depth behind them.'},
+    'Long-exposure crowd':{ratio:'16:9',choices:{type:'Architecture',look:'Long exposure',process:'Contemporary',light:'Warm practical light',framing:'Wide scene'},cue:'Keep the station and one stationary person sharp while passing commuters become directional motion trails.'},
+    'Shallow-focus portrait':{ratio:'3:4',choices:{type:'Portrait',look:'Medium format',process:'Contemporary',light:'Window light',framing:'Close-up'},cue:'Focus precisely on the near eye with a natural shallow depth of field and soft distant background highlights.'},
+    'Deep-focus street':{ratio:'3:2',choices:{type:'Street',look:'Documentary',process:'Contemporary',light:'Hard sunlight',framing:'Wide scene'},cue:'Use deep focus so foreground, middle distance, and background remain clearly readable.'},
+    'Cool cinematic color':{ratio:'16:9',choices:{type:'Street',look:'Cinematic still',process:'Contemporary',light:'Blue hour',framing:'Wide scene'},cue:'A restrained cool-blue grade with natural skin tones and a few warm practical lights, without neon overload.'},
+    'Warm editorial color':{ratio:'4:3',choices:{type:'Portrait',look:'Editorial',process:'Color negative',light:'Golden hour',framing:'Environmental portrait'},cue:'Warm softly muted editorial color, gentle highlights, natural skin tones, and subtle film grain.'}
+  };
+  if(typeof module!=='undefined'&&module.exports)module.exports=recipes;else root.inspirationRecipes=recipes;
+})(typeof window!=='undefined'?window:globalThis);
