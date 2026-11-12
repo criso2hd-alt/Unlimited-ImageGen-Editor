@@ -1,14 +1,14 @@
 {
   "name": "unlimited-image-studio",
   "productName": "Unlimited Image Studio",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "description": "Portable local image generation studio",
   "main": "desktop/main.cjs",
   "scripts": {
     "dev": "electron .",
     "build:portable": "node desktop/build-portable.cjs",
-    "test:bootstrap": "node --test desktop/bootstrap.test.cjs desktop/hardware.test.cjs desktop/choice-logic.test.cjs desktop/generation.test.cjs"
+    "test:bootstrap": "node --test desktop/bootstrap.test.cjs desktop/hardware.test.cjs desktop/choice-logic.test.cjs desktop/generation.test.cjs desktop/png.test.cjs"
   },
   "dependencies": {
     "extract-zip": "2.0.1"
@@ -26,6 +26,7 @@
       "desktop/preload.cjs",
       "desktop/bootstrap.cjs",
       "desktop/generation.cjs",
+      "desktop/png.cjs",
       "desktop/hardware.cjs",
       "desktop/assets-manifest.json",
       "desktop/setup.html",
@@ -34,6 +35,8 @@
       "prototype/index.html",
       "prototype/script.js",
       "prototype/theme.js",
+      "prototype/editor.js",
+      "prototype/editor.css",
       "prototype/choice-logic.js",
       "prototype/prompt-language.js",
       "prototype/inspiration-recipes.js",

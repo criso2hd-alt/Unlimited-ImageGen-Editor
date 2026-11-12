@@ -32,7 +32,8 @@ contextBridge.exposeInMainWorld('portable', {
     return () => ipcRenderer.removeListener('queue-update', listener);
   },
   listImages: () => ipcRenderer.invoke('generation-list'),
-  imageDataUrl: (id, thumbnail = false) => ipcRenderer.invoke('generation-image', id, thumbnail),
+  imageDataUrl: (id, thumbnail = false, source = 'library') => ipcRenderer.invoke('generation-image', id, thumbnail, source),
+  importImage: dataUrl => ipcRenderer.invoke('image-import', dataUrl),
   rateImage: (id, rating) => ipcRenderer.invoke('generation-rate', id, rating),
   listGalleries: () => ipcRenderer.invoke('gallery-list'),
   createGallery: name => ipcRenderer.invoke('gallery-create', name),

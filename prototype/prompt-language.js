@@ -16,7 +16,7 @@
   const primary={photos:'type',graphics:'asset',posters:'purpose',transparent:'asset',storyboards:'form',comics:'format'};
   function build(catalog,mode,d){
     const idea=String(d.idea||'').trim(),choices=d.choices||{},parts=[];
-    if(mode==='freeform')return `${idea}${d.alpha?' The subject is isolated on a transparent background with an alpha channel.':''}`.trim();
+    if(mode==='freeform')return idea.trim();
     const first=primary[mode],label=first&&choices[first]?.toLowerCase();
     const kind=label?`${label}${label.endsWith(medium[mode])?'':` ${medium[mode]||'image'}`}`:(medium[mode]||'image');
     const opening=`${/^[aeiou]/i.test(kind)?'An':'A'} ${kind}${idea?` showing ${idea.replace(/[.!?]+$/,'')}`:''}`;
@@ -31,7 +31,6 @@
       parts.push(`${category}: ${selected}${description?` (${description.toLowerCase()})`:''}.`);
     }
     if(d.exact?.trim())parts.push(`The visible text reads "${d.exact.trim()}" exactly.`);
-    if(mode==='transparent'||d.alpha)parts.push('The subject is isolated on a transparent background with an alpha channel.');
     return parts.join(' ');
   }
   const api={build,words};

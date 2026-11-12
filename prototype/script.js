@@ -41,10 +41,10 @@ const catalog = {
     ]
   },
   transparent: {
-    group:'CREATE',title:'Transparent assets',subtitle:'Design isolated subjects for reusable cutouts. Alpha export is still in development.',
+    group:'CREATE',title:'Transparent assets',subtitle:'Design isolated subjects for reusable cutouts. Results are PNGs with a real transparent background.',
     promptTitle:'What should appear on the transparent canvas?',promptHint:'A ceramic cup, a cartoon fox, a hand-drawn flower…',
     sections:[
-      {id:'asset',title:'What are you making?',hint:'Choose an isolated subject. True transparent export is coming later.',options:[['Product cutout','A single polished object'],['Sticker','Expressive decorative asset'],['Character','A reusable subject'],['Decorative element','Flora, shapes or ornament'],['Lettering','A word or short phrase'],['Object collection','Several separated items'],['Food cutout','An isolated dish or ingredient'],['Botanical cutout','Leaf, bloom or branch'],['Fashion item','Clothing or accessory'],['Logo concept','A simple brand mark'],['UI ornament','Small interface decoration'],['Emoji-style object','A compact expressive symbol']]},
+      {id:'asset',title:'What are you making?',hint:'Choose an isolated subject. The result is saved as a transparent PNG.',options:[['Product cutout','A single polished object'],['Sticker','Expressive decorative asset'],['Character','A reusable subject'],['Decorative element','Flora, shapes or ornament'],['Lettering','A word or short phrase'],['Object collection','Several separated items'],['Food cutout','An isolated dish or ingredient'],['Botanical cutout','Leaf, bloom or branch'],['Fashion item','Clothing or accessory'],['Logo concept','A simple brand mark'],['UI ornament','Small interface decoration'],['Emoji-style object','A compact expressive symbol']]},
       {id:'edge',title:'Edge & finish',hint:'Think about where you will reuse the asset.',options:[['Clean cutout','Precise silhouette'],['Soft natural edge','Hair, fur, translucency'],['Illustrated edge','Designed outline'],['Paper texture','Tactile handmade finish'],['Shadow included','Grounded floating object'],['No shadow','Pure isolated element'],['Die-cut border','White sticker outline'],['Feathered edge','Gentle transition'],['Crisp vector-like','Sharp simplified contour'],['Hand-torn edge','Irregular paper edge']]}
     ]
   },
@@ -200,7 +200,8 @@ async function openImageViewer(item){
   viewerRecord=item;if(!viewer.open)viewer.showModal();setViewerScale(0);
   document.getElementById('viewer-loading').hidden=false;viewerImage.hidden=true;
   document.getElementById('viewer-title').textContent=item.prompt?.slice(0,85)||'Generated image';
-  document.getElementById('viewer-meta').textContent=`${item.width||'?'} × ${item.height||'?'} · ${item.steps||'?'} steps · ${item.backend||'Local model'}`;
+  document.getElementById('viewer-meta').textContent=`${item.kind==='edit'?'Edited · ':''}${item.alpha?'Transparent PNG · ':''}${item.width||'?'} × ${item.height||'?'} · ${item.steps||'?'} steps · ${item.backend||'Local model'}`;
+  document.getElementById('viewer-viewport').classList.toggle('checker',!!item.alpha);
   document.getElementById('viewer-prompt').textContent=item.prompt||'';
   const select=document.getElementById('viewer-gallery');select.replaceChildren(new Option('No gallery',''));
   if(window.portable?.listGalleries){for(const gallery of await window.portable.listGalleries())select.add(new Option(gallery.name,gallery.id));select.value=item.galleryIds?.[0]||'';}
@@ -249,7 +250,6 @@ function refreshGenerateButton(){
 }
 async function startGeneration(mode){
   if(!window.portable?.generate){toast('Open the desktop app to render locally.');return;}
-  if(mode==='references'&&state.references.some(Boolean)){toast('Reference image generation is not connected yet.');return;}
   if(draft(mode).inspiration&&!draft(mode).idea?.trim()){
     setStep(mode,stepsFor(mode).findIndex(step=>step.kind==='brief'));
     document.getElementById('idea-field')?.focus();toast('Add your own idea to this inspiration direction first.');return;
@@ -260,9 +260,17 @@ async function startGeneration(mode){
   const count=Number(document.getElementById('render-count').value)||1;
   // The queue keeps its own copy of every setting, so you can keep editing and queue something different straight away.
   const request={prompt,negativePrompt:d.avoid||'',ratio:d.ratio||'1:1',longSide:Number(document.getElementById('render-size').value),steps:Number(document.getElementById('render-steps').value),mode};
+  request.alpha=mode==='transparent'||!!d.alpha;
   const ahead=queueState.jobs.filter(isPending).length,what=count>1?`${count} images`:'Image';
   button.disabled=true;
   try{
+    // Multiple references go to the model as reference images 1, 2, 3… in the order of the numbered squares.
+    if(mode==='references'){
+      const picked=state.references.filter(Boolean);
+      if(!picked.length)throw new Error('Add at least one reference image first.');
+      request.refs=[];request.shape='ratio';
+      for(const ref of picked){const stored=await importBlob(await (await fetch(ref.url)).blob(),ref.name);request.refs.push({source:'input',id:stored.id});}
+    }
     applyQueueState(await window.portable.generate(request,count));
     toast(ahead?`${what} added to the queue · ${ahead} ahead`:`${what} started`);
   }catch(error){toast(friendlyRenderError(error));}
@@ -298,12 +306,14 @@ function applyQueueState(next){
   }
   if(next.jobs.some(job=>job.status==='done'&&before.has(job.id)&&before.get(job.id)!=='done'))libraryApi?.refresh();
   paintQueue();
+  if(typeof editorQueueChanged==='function')editorQueueChanged();
 }
 function updateRenderFeedback(update){
   if(update.jobId&&update.jobId!==feedback.jobId)feedback={jobId:update.jobId,marks:[]};
   if(update.step&&update.steps&&update.step!==feedback.step)feedback.marks.push(Date.now());
   const {error,...progress}=update;// a backend that falls back mid-run reports an error string, but the render is still going
   Object.assign(feedback,progress);paintRenderFeedback();
+  if(typeof editorProgress==='function')editorProgress();
 }
 async function openJobImage(job){
   if(!job?.imageId||job.imageDeleted)return;
@@ -355,8 +365,8 @@ function paintRenderFeedback(){
 }
 function estimateSeconds(job){
   const done=queueState.jobs.filter(item=>item.status==='done'&&item.durationMs);
-  const same=done.filter(item=>item.longSide===job.longSide&&item.steps===job.steps&&item.ratio===job.ratio).slice(-5);
-  const pool=same.length?same:done.filter(item=>item.longSide===job.longSide).slice(-5);
+  const same=done.filter(item=>item.kind===job.kind&&item.longSide===job.longSide&&item.steps===job.steps&&item.ratio===job.ratio).slice(-5);
+  const pool=same.length?same:done.filter(item=>item.kind===job.kind&&item.longSide===job.longSide).slice(-5);
   return pool.length?pool.reduce((sum,item)=>sum+item.durationMs,0)/pool.length/1000:null;
 }
 function queueEta(){
@@ -397,7 +407,7 @@ function renderQueuePanel(){
     const body=document.createElement('div');body.className='queue-body';
     const title=document.createElement('strong');title.textContent=job.prompt;title.title=job.prompt;
     const meta=document.createElement('small');
-    meta.textContent=`${job.width} × ${job.height} · ${job.steps} steps${job.batch?` · ${batchIndex.get(job.id)} of ${batchSize.get(job.batch)}`:''}`;
+    meta.textContent=`${job.kind==='edit'?'Edit · ':''}${job.alpha?'Transparent · ':''}${job.width} × ${job.height} · ${job.steps} steps${job.batch?` · ${batchIndex.get(job.id)} of ${batchSize.get(job.batch)}`:''}`;
     const status=document.createElement('span');status.className='queue-status';
     status.textContent=job.status==='running'?(feedback.jobId===job.id&&feedback.message?feedback.message:'Starting…'):
       job.status==='waiting'?(queueState.paused?'Paused':`Waiting · #${waiting.indexOf(job)+1}`):
@@ -629,9 +639,6 @@ function updateSummary(){
   const target=document.getElementById('prompt-summary');if(target)target.textContent=(summary||'Choose a direction or describe your idea.')+(d.avoid?.trim()?`  |  Avoid: ${d.avoid.trim()}`:'');
   const review=document.getElementById('review-summary');if(review)review.textContent=summary;
 }
-function renderEditor(){workspace.innerHTML=`<div class="workspace-inner">${head('EDIT','Image editor','The editing workspace is part of the app map. Its controls come after we settle creation and inference.')}
-  <div class="editor-panel" style="padding:21px"><div class="panel-kicker">NEXT PHASE</div><h2>Open an image to refine it</h2><p>This design pass establishes where editing belongs. No editing actions are active yet.</p><div class="upload-zone"><strong>Your canvas will begin here</strong><span>Import an image or open one from your library.</span><br><button id="editor-import">＋ Open image</button></div>
-  <div class="capability-list"><div class="capability-item"><strong>Instruction edits</strong><span>Describe what should change while retaining the original scene.</span></div><div class="capability-item"><strong>Local edits</strong><span>Guide a change with a circle, annotation or mask.</span></div><div class="capability-item"><strong>Background & subject</strong><span>Extract a subject or work with transparent images.</span></div><div class="capability-item"><strong>Multiple images</strong><span>Bring references into an edit when needed.</span></div></div></div></div>`;document.getElementById('editor-import').addEventListener('click',()=>toast('Editing is reserved for a later pass.'));}
 let libraryApi=null;
 const pendingDeletes=new Set();
 function toastAction(message,label,onClick,ms=6500){
@@ -687,7 +694,7 @@ function renderLibrary(){
   function buildCard(item){
     const card=document.createElement('article');card.className='library-card generated';card.dataset.id=item.id;
     const open=document.createElement('button');open.className='library-image-button';open.type='button';
-    open.style.setProperty('--ar',`${item.width||1} / ${item.height||1}`);open.setAttribute('aria-label',`Open image large: ${item.prompt||'Generated image'}`);
+    open.style.setProperty('--ar',`${item.width||1} / ${item.height||1}`);if(item.alpha)open.classList.add('checker');open.setAttribute('aria-label',`Open image large: ${item.prompt||'Generated image'}`);
     const image=document.createElement('img');image.dataset.imageId=item.id;image.dataset.alt=item.prompt||'Generated image';image.alt='';image.decoding='async';
     const check=document.createElement('span');check.className='library-check';check.setAttribute('aria-hidden','true');check.textContent='✓';
     open.append(image,check);
@@ -810,7 +817,7 @@ function renderSettings(){
   workspace.querySelectorAll('[data-theme]').forEach(b=>b.addEventListener('click',()=>{const theme=themes[b.dataset.theme];state.preferences.theme=b.dataset.theme;state.preferences.customBackground=theme.background;state.preferences.customPanel=theme.panel;state.preferences.customAccent=theme.accent;save();applyPreferences();renderSettings();}));
   workspace.querySelectorAll('[data-custom-color]').forEach(input=>input.addEventListener('input',()=>{state.preferences[input.dataset.customColor]=input.value;state.preferences.theme='custom';save();applyPreferences();workspace.querySelectorAll('[data-theme]').forEach(b=>{b.classList.remove('selected');b.setAttribute('aria-pressed','false')});}));
 }
-function render(){libraryApi=null;if(state.mode==='inspiration')renderInspiration();else if(state.mode==='freeform')renderFreeform();else if(state.mode==='editor')renderEditor();else if(state.mode==='library')renderLibrary();else if(state.mode==='settings')renderSettings();else renderBuilder(state.mode);}
+function render(){libraryApi=null;if(typeof leaveEditor==='function')leaveEditor();if(state.mode==='inspiration')renderInspiration();else if(state.mode==='freeform')renderFreeform();else if(state.mode==='editor')renderEditor();else if(state.mode==='library')renderLibrary();else if(state.mode==='settings')renderSettings();else renderBuilder(state.mode);}
 sideLinks.forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.mode)));
 document.getElementById('mobile-menu').addEventListener('click',()=>document.querySelector('.sidebar').classList.toggle('open'));
 const support=document.getElementById('support-note');if(localStorage.getItem('unlimited-support-dismissed')==='yes')support.classList.add('hidden');

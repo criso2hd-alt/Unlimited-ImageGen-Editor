@@ -4,11 +4,15 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
+const png = require('./png.cjs');
 
 const runFile = (file, args, options) => new Promise((resolve, reject) => execFile(file, args, options, (error, stdout) => error ? reject(error) : resolve(String(stdout))));
 // Decoding on the GPU is many times faster than on the CPU. Only offered where there is room for it; a failed attempt retries on the CPU.
 const GPU_DECODE_MIN_MIB = 10240;
 const GPU_DECODE_MAX_SIDE = 1024;
+// Edits: reading the image with Qwen3-VL on the GPU takes ~2.5 s instead of ~60 s on the CPU, but the encoder stays
+// loaded, so it is only used when the diffusion weight, the encoder, its vision weights and working memory all fit.
+const TE_GPU_HEADROOM = 10.5 * 1024 ** 3;
 // Rough share of a render spent in each stage. Rendering is the only stage with a real step count.
 const STAGE_PERCENT = { preparing: 3, encoded: 15, rendering: 20, decoding: 92, saving: 97 };
 
@@ -18,6 +22,32 @@ const MODEL_FILES = {
   vae: 'qwen_image_2.1_vae_bf16.safetensors',
   llm: 'Qwen3VL-8B-Instruct-Q4_K_M.gguf'
 };
+// Vision weights for the Qwen3-VL text encoder. Only needed when reference images are passed (editing).
+const VISION_FILE = 'mmproj-Qwen3VL-8B-Instruct-F16.gguf';
+const MAX_REFS = 10;
+const ID_PATTERN = /^[\da-f-]{36}$/i;
+
+function pngSize(buffer) {
+  if (buffer.length < 24 || buffer.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') return null;
+  return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+}
+// Output size for an edit: keep the source's shape, with the chosen long side, in multiples of 32.
+function editDimensions(sourceWidth, sourceHeight, longSide) {
+  const round32 = number => Math.max(256, Math.round(number / 32) * 32);
+  return sourceWidth >= sourceHeight
+    ? [round32(longSide), round32(longSide * sourceHeight / sourceWidth)]
+    : [round32(longSide * sourceWidth / sourceHeight), round32(longSide)];
+}
+// Official Qwen-Image-2.1 wording for transparent output; it works for both generation and editing.
+// Transparent edits: this runtime's RGBA editing loses the subject, so edits go through a green screen that the
+// app keys out afterwards (see png.cjs). Generation uses the model's own RGBA output.
+const GREEN_SCREEN = 'Put the subject on a flat, uniform, pure chroma-key green (#00FF00) background, like a green screen, with no shadows or reflections on the green.';
+function modelPrompt(request) {
+  if (!request.alpha) return request.prompt;
+  const text = request.prompt.replace(/[\s.]+$/, '');
+  if (request.refs?.length) return `${text}. ${GREEN_SCREEN}`;
+  return `This is an RGBA image with transparency. ${text}. The image has alpha channel and the background is transparent.`;
+}
 
 function dimensions(ratio, longSide) {
   if (longSide === 2048) return NATIVE_2K[ratio] || NATIVE_2K['1:1'];
@@ -42,11 +72,24 @@ function validateRequest(request) {
   const ratio = Object.hasOwn(RATIOS, request?.ratio) ? request.ratio : '1:1';
   const longSide = [512, 768, 1024, 2048].includes(request?.longSide) ? request.longSide : 768;
   const steps = [12, 20, 28].includes(request?.steps) ? request.steps : 20;
-  return { prompt, negativePrompt, ratio, longSide, steps, mode: String(request?.mode || 'freeform').slice(0, 40) };
+  const refs = [];
+  for (const ref of Array.isArray(request?.refs) ? request.refs : []) {
+    if (!ID_PATTERN.test(String(ref?.id || ''))) throw new Error('A reference image is missing or invalid.');
+    refs.push({ source: ref.source === 'input' ? 'input' : 'library', id: String(ref.id) });
+  }
+  if (refs.length > MAX_REFS) throw new Error(`Use up to ${MAX_REFS} images in one edit.`);
+  return {
+    prompt, negativePrompt, ratio, longSide, steps, mode: String(request?.mode || 'freeform').slice(0, 40),
+    alpha: !!request?.alpha, refs, kind: refs.length ? 'edit' : 'generate', session: String(request?.session || '').slice(0, 40),
+    // Edits keep the source's shape; Multiple references use the canvas ratio chosen in the builder.
+    shape: request?.shape === 'ratio' ? 'ratio' : 'source'
+  };
 }
 
 function createGenerator(root, emit = () => {}, getConfiguration = () => ({}), emitQueue = () => {}, trash = file => fs.rm(file, { force: true })) {
   const library = path.join(root, 'data', 'library');
+  // Images opened from disk or marked up in the editor. Not part of the Library; old ones are pruned.
+  const inputs = path.join(root, 'cache', 'inputs');
   const modelRoot = path.join(root, 'models', 'qwen-image-2.1');
   let active = null;
   let cancelled = false;
@@ -85,12 +128,17 @@ function createGenerator(root, emit = () => {}, getConfiguration = () => ({}), e
     } catch { return false; }
   }
 
-  function cliArgs(candidate, request, output, seed, width, height, modelFile, vaeBackend) {
+  function refPath(ref) {
+    return ref.source === 'input' ? path.join(inputs, `${ref.id}.png`) : path.join(library, `${ref.id}.png`);
+  }
+
+  function cliArgs(candidate, request, output, seed, width, height, modelFile, vaeBackend, teBackend = 'cpu') {
     const args = [
       '--diffusion-model', path.join(modelRoot, modelFile),
       '--vae', path.join(modelRoot, MODEL_FILES.vae),
       '--llm', path.join(modelRoot, MODEL_FILES.llm),
-      '-p', request.prompt,
+      ...(request.refs.length ? ['--llm_vision', path.join(modelRoot, VISION_FILE), ...request.refs.flatMap(ref => ['-r', refPath(ref)])] : []),
+      '-p', modelPrompt(request),
       '-n', request.negativePrompt,
       '--cfg-scale', '6', '--sampling-method', 'euler', '--fa',
       '--model-args', 'qwen_image_2_1_prefix_cache_type=q8_0',
@@ -99,17 +147,20 @@ function createGenerator(root, emit = () => {}, getConfiguration = () => ({}), e
     ];
     if (candidate.backend === 'cpu') args.push('--backend', 'cpu', '--params-backend', 'cpu');
     else {
-      const placement = `te=cpu,vae=${vaeBackend || 'cpu'},diffusion=${candidate.backend}`;
+      const placement = `te=${teBackend},vae=${vaeBackend || 'cpu'},diffusion=${candidate.backend}`;
       args.push('--backend', placement);
       args.push('--params-backend', placement);
-      args.push('--max-vram', candidate.maxVram);
+      // A fixed budget leaves too little room once the encoder is on the GPU; the runtime then manages free VRAM itself.
+      if (teBackend === 'cpu') args.push('--max-vram', candidate.maxVram);
+      // Tiling up front: when a GPU decode runs out of memory, the runtime's own retry can leave white blocks in the image.
+      if (vaeBackend && vaeBackend !== 'cpu') args.push('--vae-tiling');
     }
     return args;
   }
 
-  async function run(candidate, request, output, seed, width, height, modelFile, gpu, vaeBackend) {
+  async function run(candidate, request, output, seed, width, height, modelFile, gpu, vaeBackend, teBackend = 'cpu') {
     return new Promise((resolve, reject) => {
-      const child = spawn(candidate.exe, cliArgs(candidate, request, output, seed, width, height, modelFile, vaeBackend), {
+      const child = spawn(candidate.exe, cliArgs(candidate, request, output, seed, width, height, modelFile, vaeBackend, teBackend), {
         cwd: path.dirname(candidate.exe), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
         env: candidate.backend === 'cuda0' ? {
           ...process.env,
@@ -138,7 +189,7 @@ function createGenerator(root, emit = () => {}, getConfiguration = () => ({}), e
           /loading diffusion model|loading llm|loading vae/i.test(text) ? 'Loading model' : '';
         if (next && next !== phase && !(phase === 'Decoding image' && next !== 'Saving image')) {
           phase = next;
-          const info = { 'Loading model': ['preparing', 'Loading model and reading your prompt', STAGE_PERCENT.preparing], 'Prompt encoded': ['preparing', 'Prompt read. Starting to render', STAGE_PERCENT.encoded],
+          const info = { 'Loading model': ['preparing', request.refs.length ? 'Loading model and reading your images' : 'Loading model and reading your prompt', STAGE_PERCENT.preparing], 'Prompt encoded': ['preparing', 'Prompt read. Starting to render', STAGE_PERCENT.encoded],
             'Rendering image': ['rendering', 'Starting to render', STAGE_PERCENT.rendering], 'Saving image': ['saving', 'Saving image', STAGE_PERCENT.saving] }[next];
           send({ phase: 'running', stage: info[0], backend: candidate.name, message: info[1], percent: info[2] });
         }
@@ -156,12 +207,19 @@ function createGenerator(root, emit = () => {}, getConfiguration = () => ({}), e
   }
 
   // Renders one already-validated request. The queue below is the only caller, so renders never overlap.
-  async function render(request) {
+  async function render(request, width, height) {
     {
     const { modelFile = 'qwen_image_2.1-Q4_K.gguf', gpu = null } = getConfiguration();
     if (!/^[\w.-]+\.gguf$/.test(modelFile)) throw new Error('Invalid model selection.');
     await fs.mkdir(library, { recursive: true });
     for (const file of [modelFile, ...Object.values(MODEL_FILES)]) await fs.access(path.join(modelRoot, file));
+    if (request.refs.length) {
+      try { await fs.access(path.join(modelRoot, VISION_FILE)); }
+      catch { throw new Error('Editing needs the vision weights. Open Settings, choose Change model or GPU, and continue setup to download them.'); }
+      for (const ref of request.refs) {
+        try { await fs.access(refPath(ref)); } catch { throw new Error('A source image for this edit was deleted or moved.'); }
+      }
+    }
     let variants = await candidates(gpu);
     if (!variants.length) throw new Error('The local image runtime is missing. Restart the app to install it.');
     try {
@@ -180,7 +238,7 @@ function createGenerator(root, emit = () => {}, getConfiguration = () => ({}), e
     }
     const id = crypto.randomUUID();
     const output = path.join(library, `${id}.png`);
-    const [width, height] = dimensions(request.ratio, request.longSide);
+    if (!width || !height) [width, height] = dimensions(request.ratio, request.longSide);
     const seed = crypto.randomInt(0, 0x7fffffff);
     cancelled = false;
     let lastError;
@@ -190,16 +248,37 @@ function createGenerator(root, emit = () => {}, getConfiguration = () => ({}), e
       try {
         if (variant.backend.startsWith('vulkan') && !(await resolveVulkan(variant, gpu))) continue;
         const gpuDecode = variant.backend === 'cuda0' && (gpu?.memoryMiB || 0) >= GPU_DECODE_MIN_MIB && request.longSide <= GPU_DECODE_MAX_SIDE;
-        try { await run(variant, request, output, seed, width, height, modelFile, gpu, gpuDecode ? variant.backend : 'cpu'); }
-        catch (error) {
-          if (!gpuDecode || cancelled) throw error;
-          send({ phase: 'running', stage: 'preparing', backend: variant.name, message: 'GPU decode failed. Retrying with the safer CPU decode.', percent: 1 });
-          await run(variant, request, output, seed, width, height, modelFile, gpu, 'cpu');
+        let weightBytes = Infinity;
+        try { weightBytes = (await fs.stat(path.join(modelRoot, modelFile))).size; } catch {}
+        const encoderOnGpu = request.refs.length > 0 && variant.backend === 'cuda0' && (gpu?.memoryMiB || 0) * 1024 ** 2 >= weightBytes + TE_GPU_HEADROOM;
+        // Fastest placement first; each failure falls back to a safer one before trying another backend.
+        const attempts = [
+          ...(encoderOnGpu ? [{ te: variant.backend, vae: gpuDecode ? variant.backend : 'cpu', note: 'Retrying with the image read on the CPU. This takes longer.' }] : []),
+          { te: 'cpu', vae: gpuDecode ? variant.backend : 'cpu', note: 'GPU decode failed. Retrying with the safer CPU decode.' },
+          ...(gpuDecode ? [{ te: 'cpu', vae: 'cpu' }] : [])
+        ];
+        for (let index = 0; index < attempts.length; index++) {
+          try { await run(variant, request, output, seed, width, height, modelFile, gpu, attempts[index].vae, attempts[index].te); break; }
+          catch (error) {
+            if (cancelled || index === attempts.length - 1) throw error;
+            send({ phase: 'running', stage: 'preparing', backend: variant.name, message: attempts[index].note, percent: 1 });
+          }
         }
         const data = await fs.readFile(output);
         if (data.length < 100 || data.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') throw new Error('The runtime did not produce a valid PNG image.');
+        let transparent = request.alpha;
+        if (request.alpha) {
+          send({ phase: 'running', stage: 'saving', backend: variant.name, message: 'Cleaning up the transparent edges', percent: STAGE_PERCENT.saving });
+          let image = png.decode(data);
+          if (request.refs.length) {
+            if (png.greenShare(image) >= 0.03) image = png.keyGreen(image);
+            else { transparent = false; send({ phase: 'running', stage: 'saving', backend: variant.name, message: 'The background could not be separated, so the image was kept as it is.', percent: STAGE_PERCENT.saving }); }
+          }
+          if (transparent) await fs.writeFile(output, png.encode(png.removeSpecks(image)));
+        }
         const record = { id, createdAt: new Date().toISOString(), prompt: request.prompt, negativePrompt: request.negativePrompt,
-          mode: request.mode, ratio: request.ratio, width, height, steps: request.steps, seed, backend: variant.name, modelFile, rating: 0 };
+          mode: request.mode, ratio: request.ratio, width, height, steps: request.steps, seed, backend: variant.name, modelFile, rating: 0,
+          kind: request.kind, alpha: transparent, ...(request.refs.length ? { refs: request.refs } : {}) };
         await fs.writeFile(path.join(library, `${id}.json`), JSON.stringify(record, null, 2));
         send({ phase: 'complete', backend: variant.name, message: 'Image ready', id, percent: 100 });
         return record;
@@ -238,6 +317,8 @@ function createGenerator(root, emit = () => {}, getConfiguration = () => ({}), e
     jobs: jobs.map(job => ({
       id: job.id, status: job.status, prompt: job.request.prompt, mode: job.request.mode, ratio: job.request.ratio,
       longSide: job.request.longSide, steps: job.request.steps, width: job.width, height: job.height, batch: job.batch || null,
+      kind: job.request.kind || 'generate', alpha: !!job.request.alpha, session: job.request.session || '',
+      refs: job.request.refs || [],
       imageId: job.imageId || null, imageDeleted: !!job.imageDeleted, error: job.error || '', backend: job.backend || '',
       createdAt: job.createdAt, startedAt: job.startedAt || 0, durationMs: job.durationMs || 0
     }))
@@ -264,6 +345,7 @@ function createGenerator(root, emit = () => {}, getConfiguration = () => ({}), e
       } catch { jobs = []; }
       // Jobs left over from a previous session wait for an explicit Resume instead of using the GPU unannounced.
       paused = jobs.some(job => job.status === 'waiting');
+      pruneInputs();
     })();
   }
 
@@ -279,7 +361,7 @@ function createGenerator(root, emit = () => {}, getConfiguration = () => ({}), e
         job.status = 'running'; job.startedAt = Date.now();
         notify();
         try {
-          const record = await render(job.request);
+          const record = await render(job.request, job.width, job.height);
           job.status = 'done'; job.imageId = record.id; job.backend = record.backend;
         } catch (error) {
           if (job.interrupted) {
@@ -305,7 +387,13 @@ function createGenerator(root, emit = () => {}, getConfiguration = () => ({}), e
     await ensureLoaded();
     const request = validateRequest(input);
     count = Math.min(8, Math.max(1, Math.floor(Number(count)) || 1));
-    const [width, height] = dimensions(request.ratio, request.longSide);
+    let [width, height] = dimensions(request.ratio, request.longSide);
+    if (request.refs.length && request.shape !== 'ratio') {
+      let size = null;
+      try { size = pngSize(await readHead(refPath(request.refs[0]))); } catch {}
+      if (!size) throw new Error('The image to edit could not be read.');
+      [width, height] = editDimensions(size.width, size.height, request.longSide);
+    }
     const batch = count > 1 ? crypto.randomUUID() : null;
     for (let index = 0; index < count; index++) jobs.push({ id: crypto.randomUUID(), status: 'waiting', request, width, height, batch, createdAt: Date.now() });
     const state = notify();
@@ -397,18 +485,53 @@ function createGenerator(root, emit = () => {}, getConfiguration = () => ({}), e
     if (changed) notify();
     return { deleted, failed };
   }
-  async function image(id, thumbnail = false) {
-    const file = path.join(library, `${validId(id)}.png`);
-    if (!thumbnail) return `data:image/png;base64,${(await fs.readFile(file)).toString('base64')}`;
+  async function readHead(file) {
+    const handle = await fs.open(file, 'r');
+    try { const buffer = Buffer.alloc(24); await handle.read(buffer, 0, 24, 0); return buffer; } finally { await handle.close(); }
+  }
+  async function isTransparent(id) {
+    try { return !!JSON.parse(await fs.readFile(path.join(library, `${id}.json`), 'utf8')).alpha; } catch { return false; }
+  }
+  async function image(id, thumbnail = false, source = 'library') {
+    const file = source === 'input' ? path.join(inputs, `${validId(id)}.png`) : path.join(library, `${validId(id)}.png`);
+    if (!thumbnail || source === 'input') return `data:image/png;base64,${(await fs.readFile(file)).toString('base64')}`;
     // Rendered PNGs never change, so a thumbnail is decoded once and reused on every later visit to the Library.
-    const cached = path.join(root, 'cache', 'thumbs', `${id}.jpg`);
-    try { return `data:image/jpeg;base64,${(await fs.readFile(cached)).toString('base64')}`; } catch {}
+    // Transparent images keep a PNG thumbnail so their alpha survives; everything else uses a small JPEG.
+    for (const [extension, mime] of [['jpg', 'jpeg'], ['png', 'png']]) {
+      try { return `data:image/${mime};base64,${(await fs.readFile(path.join(root, 'cache', 'thumbs', `${id}.${extension}`))).toString('base64')}`; } catch {}
+    }
     const { nativeImage } = require('electron');
     const picture = nativeImage.createFromBuffer(await fs.readFile(file));
     if (picture.isEmpty()) throw new Error('Could not read this image.');
-    const jpeg = picture.resize({ width: Math.min(520, picture.getSize().width), quality: 'good' }).toJPEG(85);
-    fs.mkdir(path.dirname(cached), { recursive: true }).then(() => fs.writeFile(cached, jpeg)).catch(() => {});
-    return `data:image/jpeg;base64,${jpeg.toString('base64')}`;
+    const resized = picture.resize({ width: Math.min(520, picture.getSize().width), quality: 'good' });
+    const alpha = await isTransparent(id);
+    const data = alpha ? resized.toPNG() : resized.toJPEG(85);
+    const cached = path.join(root, 'cache', 'thumbs', `${id}.${alpha ? 'png' : 'jpg'}`);
+    fs.mkdir(path.dirname(cached), { recursive: true }).then(() => fs.writeFile(cached, data)).catch(() => {});
+    return `data:image/${alpha ? 'png' : 'jpeg'};base64,${data.toString('base64')}`;
+  }
+  // The window converts any image the user opens to PNG first; this stores it for use as an edit source or reference.
+  async function importImage(dataUrl) {
+    const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ''));
+    if (!match) throw new Error('That file could not be read as an image.');
+    const buffer = Buffer.from(match[1], 'base64');
+    const size = pngSize(buffer);
+    if (!size || !size.width || !size.height) throw new Error('That file could not be read as an image.');
+    if (size.width > 4096 || size.height > 4096) throw new Error('Use an image up to 4096 pixels on each side.');
+    const id = crypto.randomUUID();
+    await fs.mkdir(inputs, { recursive: true });
+    await fs.writeFile(path.join(inputs, `${id}.png`), buffer);
+    return { id, source: 'input', ...size };
+  }
+  async function pruneInputs() {
+    const keep = new Set(jobs.filter(job => job.status === 'waiting' || job.status === 'running').flatMap(job => (job.request.refs || []).map(ref => ref.id)));
+    const cutoff = Date.now() - 30 * 24 * 3600 * 1000;
+    let names = [];
+    try { names = await fs.readdir(inputs); } catch { return; }
+    for (const name of names) {
+      const file = path.join(inputs, name);
+      try { if (!keep.has(name.replace(/\.png$/, '')) && (await fs.stat(file)).mtimeMs < cutoff) await fs.rm(file); } catch {}
+    }
   }
 
   const galleryFile = path.join(library, 'galleries.json');
@@ -455,7 +578,7 @@ function createGenerator(root, emit = () => {}, getConfiguration = () => ({}), e
     return record;
   }
 
-  return { enqueue, queueState, cancelJob, cancelCurrent, cancelAll, removeJob, clearFinished, moveJob, setPaused, shutdown, isBusy, deleteImages, list, image, rate, galleries, createGallery, renameGallery, deleteGallery, setImageGalleries };
+  return { importImage, enqueue, queueState, cancelJob, cancelCurrent, cancelAll, removeJob, clearFinished, moveJob, setPaused, shutdown, isBusy, deleteImages, list, image, rate, galleries, createGallery, renameGallery, deleteGallery, setImageGalleries };
 }
 
-module.exports = { createGenerator, dimensions, validateRequest, progressStep };
+module.exports = { createGenerator, dimensions, editDimensions, validateRequest, progressStep, modelPrompt };

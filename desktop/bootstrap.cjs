@@ -174,7 +174,7 @@ async function downloadOnce(root, asset, report, allowHttp) {
     }
     await fsp.rm(partial); offset = 0;
   }
-  const headers = { 'User-Agent': 'Unlimited-Image-Studio/0.0.1' };
+  const headers = { 'User-Agent': 'Unlimited-Image-Studio/0.1.0' };
   if (offset) headers.Range = `bytes=${offset}-`;
   const response = await request(asset.url, headers, 10, allowHttp);
   if (response.statusCode !== 200 && response.statusCode !== 206) {

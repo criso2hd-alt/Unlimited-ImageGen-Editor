@@ -124,3 +124,48 @@ test('deleting images sends files to the trash, drops cached thumbnails and reje
     await assert.rejects(generator.deleteImages([]), /Choose between/);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
+
+const { editDimensions, modelPrompt } = require('./generation.cjs');
+const fakePng = (width, height) => { const b = Buffer.alloc(33); Buffer.from('89504e470d0a1a0a', 'hex').copy(b); b.writeUInt32BE(13, 8); b.write('IHDR', 12); b.writeUInt32BE(width, 16); b.writeUInt32BE(height, 20); return b; };
+
+test('edits keep the source shape in multiples of 32', () => {
+  assert.deepEqual(editDimensions(1200, 800, 1024), [1024, 672]);
+  assert.deepEqual(editDimensions(800, 1200, 1024), [672, 1024]);
+  assert.deepEqual(editDimensions(4000, 100, 512), [512, 256], 'very wide sources keep a usable minimum height');
+});
+
+test('transparent output uses the official RGBA prompt wording', () => {
+  const plain = validateRequest({ prompt: 'A ceramic cup.' });
+  assert.equal(modelPrompt(plain), 'A ceramic cup.');
+  const alpha = validateRequest({ prompt: 'A ceramic cup.', alpha: true });
+  assert.equal(modelPrompt(alpha), 'This is an RGBA image with transparency. A ceramic cup. The image has alpha channel and the background is transparent.');
+  const edit = validateRequest({ prompt: 'Remove the background.', alpha: true, refs: [{ id: '12345678-1234-1234-1234-123456789abc' }] });
+  assert.match(modelPrompt(edit), /^Remove the background\. Put the subject on a flat, uniform, pure chroma-key green/, 'transparent edits go through a green screen');
+});
+
+test('reference images are validated and mark the request as an edit', () => {
+  const id = '12345678-1234-1234-1234-123456789abc';
+  const edit = validateRequest({ prompt: 'Make it blue', refs: [{ source: 'input', id }, { source: 'anything', id }] });
+  assert.equal(edit.kind, 'edit');
+  assert.deepEqual(edit.refs, [{ source: 'input', id }, { source: 'library', id }]);
+  assert.equal(validateRequest({ prompt: 'x' }).kind, 'generate');
+  assert.throws(() => validateRequest({ prompt: 'x', refs: [{ id: '../../etc' }] }), /reference image/);
+  assert.throws(() => validateRequest({ prompt: 'x', refs: Array.from({ length: 11 }, () => ({ id })) }), /up to 10/);
+});
+
+test('imported images become edit sources and edit jobs take their size from the source', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-edit-'));
+  try {
+    const generator = createGenerator(root);
+    await generator.setPaused(true);
+    const input = await generator.importImage(`data:image/png;base64,${fakePng(1200, 800).toString('base64')}`);
+    assert.deepEqual([input.width, input.height, input.source], [1200, 800, 'input']);
+    await assert.rejects(generator.importImage('data:image/jpeg;base64,AAAA'), /could not be read/);
+    await assert.rejects(generator.importImage(`data:image/png;base64,${fakePng(5000, 10).toString('base64')}`), /4096/);
+    const state = await generator.enqueue({ prompt: 'Make the sky a sunset', longSide: 1024, refs: [{ source: 'input', id: input.id }], session: 'abc' });
+    const job = state.jobs[0];
+    assert.deepEqual([job.kind, job.width, job.height, job.session, job.refs.length], ['edit', 1024, 672, 'abc', 1]);
+    await assert.rejects(generator.enqueue({ prompt: 'x', refs: [{ source: 'library', id: '12345678-1234-1234-1234-123456789abc' }] }), /could not be read/);
+    await generator.cancelAll();
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});

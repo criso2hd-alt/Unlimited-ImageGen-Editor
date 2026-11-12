@@ -181,7 +181,8 @@ ipcMain.handle('queue-move', (_event, id, direction) => generator.moveJob(String
 ipcMain.handle('queue-pause', (_event, paused) => generator.setPaused(!!paused));
 ipcMain.handle('generation-delete', (_event, ids) => generator.deleteImages(ids));
 ipcMain.handle('generation-list', () => generator.list());
-ipcMain.handle('generation-image', (_event, id, thumbnail) => generator.image(id, thumbnail));
+ipcMain.handle('generation-image', (_event, id, thumbnail, source) => generator.image(id, thumbnail, source === 'input' ? 'input' : 'library'));
+ipcMain.handle('image-import', (_event, dataUrl) => generator.importImage(dataUrl));
 ipcMain.handle('generation-rate', (_event, id, rating) => generator.rate(id, rating));
 ipcMain.handle('gallery-list', () => generator.galleries());
 ipcMain.handle('gallery-create', (_event, name) => generator.createGallery(name));
